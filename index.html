@@ -1,124 +1,76 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head>
-  <meta charset="UTF-8">
-  <title>Textify - пробный анализ текста</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 50px;
-      background: #f2f2f2;
+  <head>
+    <meta charset="UTF-8" />
+    <title>Textify - пробный анализ текста</title>
+    <link rel="stylesheet" href="./css/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+  <div class="logo">
+    <h1>Textify</h1>
+    <p class="slogan">Исправь текст за секунду</p>
+  </div>
+</header>
+
+    <textarea id="user-text" placeholder="Введите текст здесь..."></textarea>
+    <button id="analyze-btn">Анализировать</button>
+
+    <div id="result">Тут Появится Готовый Текст...</div>
+    <script>
+  const resultDiv = document.getElementById("result");
+
+  document.getElementById("analyze-btn").addEventListener("click", () => {
+    const text = document.getElementById("user-text").value.trim();
+    if (!text) {
+      resultDiv.innerHTML = "Введите текст для проверки.";
+      return;
     }
-    textarea {
-      width: 500px;
-      height: 150px;
-      padding: 10px;
-      font-size: 16px;
-    }
-    button {
-      margin-top: 10px;
-      padding: 10px 20px;
-      font-size: 16px;
-      cursor: pointer;
-    }
-    #result {
-      margin-top: 20px;
-      width: 500px;
-      background: #fff;
-      padding: 15px;
-      border-radius: 8px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    }
-    .item {
-      margin-bottom: 10px;
-    }
-  </style>
-</head>
-<body>
 
-<h1>Textify - пробный анализ текста</h1>
+    resultDiv.innerHTML = "Анализируем...";
 
-<textarea id="user-text" placeholder="Введите текст здесь..."></textarea>
-<button id="analyze-btn">Анализировать</button>
+    fetch("https://api.languagetool.org/v2/check", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: `text=${encodeURIComponent(text)}&language=ru`,
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.matches && data.matches.length > 0) {
+        let correctedText = text;
 
-<div id="result"></div>
-<script>
-const analyzeBtn = document.getElementById("analyze-btn");
-const resultDiv = document.getElementById("result");
+        // исправляем текст с конца
+        data.matches.reverse().forEach(match => {
+          if (match.replacements.length > 0) {
+            const replacement = match.replacements[0].value;
+            correctedText =
+              correctedText.slice(0, match.offset) +
+              replacement +
+              correctedText.slice(match.offset + match.length);
+          }
+        });
 
-analyzeBtn.addEventListener("click", () => {
-  const text = document.getElementById("user-text").value.trim();
-  if (!text) {
-    resultDiv.innerHTML = "Введите текст для анализа!";
-    return;
-  }
+        // подсветка ошибок в исходном тексте
+        let highlightedText = text;
+        data.matches.forEach(match => {
+          highlightedText =
+            highlightedText.slice(0, match.offset) +
+            `<span class="highlight">${highlightedText.slice(match.offset, match.offset + match.length)}</span>` +
+            highlightedText.slice(match.offset + match.length);
+        });
 
-  resultDiv.innerHTML = "Загрузка...";
-
-  fetch("https://api.languagetool.org/v2/check", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: `text=${encodeURIComponent(text)}&language=ru`
-  })
-  .then(res => res.json())
-  .then(data => {
-    resultDiv.innerHTML = "";
-
-    if (data.matches && data.matches.length > 0) {
-      let correctedText = text; // создаём копию текста для исправлений
-      let offsetShift = 0; // нужен, чтобы сдвиги индексов учитывались при заменах
-
-      data.matches.forEach(match => {
-        const wrongWord = correctedText.substring(match.offset + offsetShift, match.offset + offsetShift + match.length);
-
-        if (match.replacements && match.replacements.length > 0) {
-          const replacement = match.replacements[0].value; // берём первое исправление
-          correctedText = 
-            correctedText.substring(0, match.offset + offsetShift) +
-            replacement +
-            correctedText.substring(match.offset + offsetShift + match.length);
-
-          // корректируем сдвиг
-          offsetShift += replacement.length - match.length;
-        }
-      });
-
-      // выводим список ошибок
-      const errorsBlock = document.createElement("div");
-      errorsBlock.innerHTML = "<h3>Найденные ошибки:</h3>";
-      data.matches.forEach(match => {
-        const div = document.createElement("div");
-        div.className = "item";
-        div.innerHTML = `
-          <strong>Ошибка:</strong> ${match.message} <br>
-          <strong>Неправильно:</strong> ${text.substring(match.offset, match.offset + match.length)} <br>
-          <strong>Варианты:</strong> ${match.replacements.map(r => r.value).join(", ")}
-        `;
-        errorsBlock.appendChild(div);
-      });
-      resultDiv.appendChild(errorsBlock);
-
-      // выводим исправленный текст
-      const fixedBlock = document.createElement("div");
-      fixedBlock.className = "fixed";
-      fixedBlock.innerHTML = `<h3>Исправленный текст:</h3><p>${correctedText}</p>`;
-      resultDiv.appendChild(fixedBlock);
-
-    } else {
-      resultDiv.innerHTML = "Ошибки не найдены 🎉";
-    }
-  })
-  .catch(err => {
-    resultDiv.innerHTML = "Ошибка: " + err;
-    console.error(err);
+        resultDiv.innerHTML = `<strong>Ошибки подсвечены:</strong><br>${highlightedText}<br><br><strong>Исправленный текст:</strong><br>${correctedText}`;
+      } else {
+        resultDiv.innerHTML = "Ошибки не найдены 🎉";
+      }
+    })
+    .catch(err => {
+      resultDiv.innerHTML = "Ошибка: " + err;
+    });
   });
-});
-</script>
-
-</body>
+    </script>
+    <h1 class="Alert"> ТЕКСТ МОЖЕТ БЫТЬ НЕ ПРАВИЛЬНЫМ ПОСЛЕ ОБРАБОТКИ ПРОВЕРЬТЕ ТЕКСТ ЧТО БЫ УДОСТОВЕРИТСЯ В ПРАВИЛЬНОСТИ!</h1>
+  </body>
 </html>
